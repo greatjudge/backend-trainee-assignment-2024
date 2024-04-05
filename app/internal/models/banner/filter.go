@@ -1,4 +1,4 @@
-package models
+package banner
 
 type FilterSchema struct {
 	HasFeatureID bool

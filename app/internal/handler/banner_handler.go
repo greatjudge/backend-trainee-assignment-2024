@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"banner/internal/models"
+	bannermodels "banner/internal/models/banner"
 	"banner/internal/sending"
 	"context"
 	"encoding/json"
@@ -15,9 +15,9 @@ import (
 
 type bannerServicer interface {
 	GetUserBanner(ctx context.Context, tagID int, featureID int, useLastRevision bool, userToken string) (string, error)
-	BannerList(ctx context.Context, filter models.FilterSchema) ([]models.Banner, error)
-	CreateBanner(ctx context.Context, banner models.Banner) (int, error)
-	PartialUpdateBanner(ctx context.Context, id int, bannerPartial models.BannerPartialUpdate) error
+	BannerList(ctx context.Context, filter bannermodels.FilterSchema) ([]bannermodels.Banner, error)
+	CreateBanner(ctx context.Context, banner bannermodels.Banner) (int, error)
+	PartialUpdateBanner(ctx context.Context, id int, bannerPartial bannermodels.BannerPartialUpdate) error
 	DeleteBanner(ctx context.Context, id int) error
 }
 
@@ -92,7 +92,7 @@ func (h BannerHandler) BannerList(w http.ResponseWriter, r *http.Request) {
 		offset = int(offsetUint)
 	}
 
-	filter := models.NewFilerSchema(limit, offset)
+	filter := bannermodels.NewFilerSchema(limit, offset)
 
 	if queryParams.Has(featureIDParamName) {
 		featureID, err := featureIDFromQuery(queryParams)
@@ -128,7 +128,7 @@ func (h BannerHandler) CreateBanner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var bannerReq models.BannerRequest
+	var bannerReq bannermodels.BannerRequest
 	err = json.Unmarshal(body, &bannerReq)
 	if err != nil {
 		sending.SendErrorMsg(w, http.StatusBadRequest, err.Error()) // TODO
@@ -172,7 +172,7 @@ func (h BannerHandler) UpdatePatial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var bannerPartial models.BannerPartialUpdate
+	var bannerPartial bannermodels.BannerPartialUpdate
 	err = json.Unmarshal(body, &bannerPartial)
 	if err != nil {
 		sending.SendErrorMsg(w, http.StatusBadRequest, err.Error()) // TODO

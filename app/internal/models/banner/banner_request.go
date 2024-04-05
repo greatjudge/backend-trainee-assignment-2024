@@ -1,4 +1,4 @@
-package models
+package banner
 
 type BannerRequest struct {
 	TagIDs    []int                  `json:"tag_ids"`
