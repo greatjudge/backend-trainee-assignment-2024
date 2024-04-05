@@ -15,3 +15,10 @@ func (br BannerRequest) ToBanner() Banner {
 		IsActive:  br.IsActive,
 	}
 }
+
+type BannerPartialUpdate struct {
+	TagIDs    interface{} `json:"tag_ids"`
+	FeatureID interface{} `json:"feature_id"`
+	Content   interface{} `json:"content"`
+	IsActive  interface{} `json:"is_active"`
+}

@@ -13,18 +13,19 @@ import (
 	"github.com/gorilla/mux"
 )
 
-type bannerService interface {
+type bannerServicer interface {
 	GetUserBanner(ctx context.Context, tagID int, featureID int, useLastRevision bool, userToken string) (string, error)
-	BannerList(ctx context.Context, filter FilterSchema) ([]models.Banner, error)
+	BannerList(ctx context.Context, filter models.FilterSchema) ([]models.Banner, error)
 	CreateBanner(ctx context.Context, banner models.Banner) (int, error)
+	PartialUpdateBanner(ctx context.Context, id int, bannerPartial models.BannerPartialUpdate) error
 	DeleteBanner(ctx context.Context, id int) error
 }
 
 type BannerHandler struct {
-	service bannerService
+	service bannerServicer
 }
 
-func NewBannerHandler(service bannerService) BannerHandler {
+func NewBannerHandler(service bannerServicer) BannerHandler {
 	return BannerHandler{
 		service: service,
 	}
@@ -91,7 +92,7 @@ func (h BannerHandler) BannerList(w http.ResponseWriter, r *http.Request) {
 		offset = int(offsetUint)
 	}
 
-	filter := NewFilerSchema(limit, offset)
+	filter := models.NewFilerSchema(limit, offset)
 
 	if queryParams.Has(featureIDParamName) {
 		featureID, err := featureIDFromQuery(queryParams)
@@ -171,7 +172,20 @@ func (h BannerHandler) UpdatePatial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO
+	var bannerPartial models.BannerPartialUpdate
+	err = json.Unmarshal(body, &bannerPartial)
+	if err != nil {
+		sending.SendErrorMsg(w, http.StatusBadRequest, err.Error()) // TODO
+		return
+	}
+
+	err = h.service.PartialUpdateBanner(r.Context(), id, bannerPartial)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h BannerHandler) DeleteBanner(w http.ResponseWriter, r *http.Request) {
