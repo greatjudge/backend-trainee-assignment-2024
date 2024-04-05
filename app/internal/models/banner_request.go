@@ -1,10 +1,10 @@
 package models
 
 type BannerRequest struct {
-	TagIDs    []int  `json:"tag_ids"`
-	FeatureID int    `json:"feature_id"`
-	Content   string `json:"content"`
-	IsActive  bool   `json:"is_active"`
+	TagIDs    []int                  `json:"tag_ids"`
+	FeatureID int                    `json:"feature_id"`
+	Content   map[string]interface{} `json:"content"`
+	IsActive  bool                   `json:"is_active"`
 }
 
 func (br BannerRequest) ToBanner() Banner {
