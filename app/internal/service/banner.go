@@ -100,17 +100,27 @@ func (s BannerService) BannerList(ctx context.Context, filter bannermodels.Filte
 
 func (s BannerService) CreateBanner(ctx context.Context, banner bannermodels.Banner) (int, error) {
 	id, err := s.repo.CreateBanner(ctx, banner)
-	if err != nil {
-		return 0, nil // TODO
+
+	switch {
+	case errors.Is(err, ErrDBBannerAlreadyExists):
+		return 0, ErrBannerAlreadyExists
+	case err != nil:
+		return 0, err
 	}
+
 	return id, nil
 }
 
 func (s BannerService) PartialUpdateBanner(ctx context.Context, id int, bannerPartial bannermodels.BannerPartialUpdate) error {
 	err := s.repo.PartialUpdateBanner(ctx, bannerPartial)
-	if err != nil {
+
+	switch {
+	case errors.Is(err, ErrDBBannerAlreadyExists):
+		return ErrBannerAlreadyExists
+	case err != nil:
 		return err
 	}
+
 	return nil
 }
 
