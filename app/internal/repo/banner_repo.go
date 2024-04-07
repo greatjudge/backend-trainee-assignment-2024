@@ -45,7 +45,7 @@ func (repo BannerRepo) CreateBanner(ctx context.Context, banner bannermodels.Ban
 	err := row.Scan(&id)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return 0, service.ErrBannerAlreadyExists
+		return 0, service.ErrDBBannerAlreadyExists
 	case err != nil:
 		return 0, err
 	}
@@ -70,7 +70,7 @@ func (repo BannerRepo) GetUserBanner(ctx context.Context, tagID int, featureID i
 	)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return bannermodels.Banner{}, service.ErrBannerNotFound
+		return bannermodels.Banner{}, service.ErrDBBannerNotFound
 	case err != nil:
 		return bannermodels.Banner{}, err
 	}
