@@ -179,6 +179,11 @@ func (h BannerHandler) UpdatePatial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	bannerPartial, err = h.checkAndSetCorrectTypesToBannerPartial(bannerPartial)
+	if err != nil {
+		sending.SendErrorMsg(w, http.StatusBadRequest, err.Error())
+	}
+
 	err = h.service.PartialUpdateBanner(r.Context(), id, bannerPartial)
 	if err != nil {
 		h.handleServiceError(w, err)
@@ -208,4 +213,49 @@ func (h BannerHandler) DeleteBanner(w http.ResponseWriter, r *http.Request) {
 
 func (h BannerHandler) handleServiceError(w http.ResponseWriter, err error) {
 	// TODO
+}
+
+func (h BannerHandler) checkAndSetCorrectTypesToBannerPartial(bannerPartial bannermodels.BannerPartialUpdate) (bannermodels.BannerPartialUpdate, error) {
+	if bannerPartial.IsActive != nil {
+		_, ok := bannerPartial.IsActive.(bool)
+		if !ok {
+			return bannerPartial, errors.New(badIsActive)
+		}
+	}
+
+	if bannerPartial.FeatureID != nil {
+		featureID, ok := bannerPartial.IsActive.(float64)
+		if !ok {
+			return bannerPartial, errors.New(badFeatureIDMsg)
+		}
+		bannerPartial.FeatureID = int(featureID)
+	}
+
+	if bannerPartial.TagIDs != nil {
+		tagIDsInterface, ok := bannerPartial.TagIDs.([]interface{})
+		if !ok {
+			return bannerPartial, errors.New(badTagIDsMsg)
+		}
+
+		tagIDs := make([]int, len(tagIDsInterface))
+		for i, id := range tagIDsInterface {
+			tagID, ok := id.(float64)
+			if !ok {
+				return bannerPartial, errors.New(badTagIDsMsg)
+			}
+
+			tagIDs[i] = int(tagID)
+		}
+
+		bannerPartial.TagIDs = tagIDs
+	}
+
+	if bannerPartial.Content != nil {
+		_, ok := bannerPartial.Content.(map[string]interface{})
+		if !ok {
+			return bannerPartial, errors.New(badContentMsg)
+		}
+	}
+
+	return bannerPartial, nil
 }

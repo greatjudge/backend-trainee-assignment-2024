@@ -18,7 +18,10 @@ const (
 	idParamName              = "id"
 
 	badTagIDMsg        = "tag_id должен быть целым числом"
+	badTagIDsMsg       = "tag_ids должен быть массивом целых чисел"
+	badContentMsg      = "content должен быть структурой"
 	badFeatureIDMsg    = "feature_id должен быть целым числом"
+	badIsActive        = "is_active должен быть типа bool"
 	badUseLastRevision = "use_last_revision должен быть типа boolean"
 	badLimitMsg        = "limit должен быть целым числом >= 0"
 	badOfssetMsg       = "offset должен быть целым числом >= 0"
