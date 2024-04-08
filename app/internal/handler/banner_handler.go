@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"banner/internal/middleware"
 	bannermodels "banner/internal/models/banner"
+	usermodels "banner/internal/models/user"
+
 	"banner/internal/sending"
 	"banner/internal/service"
 	"context"
@@ -9,13 +12,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 
 	"github.com/gorilla/mux"
 )
 
 type bannerServicer interface {
-	GetUserBanner(ctx context.Context, tagID int, featureID int, useLastRevision bool, userToken string) (string, error)
+	GetUserBanner(ctx context.Context, user usermodels.User, tagID int, featureID int, useLastRevision bool) ([]byte, error)
 	BannerList(ctx context.Context, filter bannermodels.FilterSchema) ([]bannermodels.Banner, error)
 	CreateBanner(ctx context.Context, banner bannermodels.Banner) (int, error)
 	PartialUpdateBanner(ctx context.Context, id int, bannerPartial bannermodels.BannerPartialUpdate) error
@@ -32,7 +34,7 @@ func NewBannerHandler(service bannerServicer) BannerHandler {
 	}
 }
 
-func (h BannerHandler) GetUserBanner(w http.ResponseWriter, r *http.Request) {
+func (h *BannerHandler) GetUserBanner(w http.ResponseWriter, r *http.Request) {
 	queryParams := r.URL.Query()
 
 	tagID, err := tagIDFromQuery(queryParams)
@@ -55,22 +57,22 @@ func (h BannerHandler) GetUserBanner(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	userToken, ok := r.Context().Value(UserTokenKey).(string)
+	user, ok := r.Context().Value(middleware.UserKey).(usermodels.User)
 	if !ok {
-		sending.SendErrorMsg(w, http.StatusInternalServerError, errMsgUserTokenNotFound)
+		sending.SendErrorMsg(w, http.StatusInternalServerError, errMsgUserNotFoundInCTX)
 		return
 	}
 
-	bannerJSON, err := h.service.GetUserBanner(r.Context(), tagID, featureID, useLastRevision, userToken)
+	bannerJSON, err := h.service.GetUserBanner(r.Context(), user, tagID, featureID, useLastRevision)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	sending.SendJSONBytes(w, http.StatusOK, []byte(bannerJSON))
+	sending.SendJSONBytes(w, http.StatusOK, bannerJSON)
 }
 
-func (h BannerHandler) BannerList(w http.ResponseWriter, r *http.Request) {
+func (h *BannerHandler) BannerList(w http.ResponseWriter, r *http.Request) {
 	queryParams := r.URL.Query()
 
 	limit := defaultLimit
@@ -122,7 +124,7 @@ func (h BannerHandler) BannerList(w http.ResponseWriter, r *http.Request) {
 	sending.JSONMarshallAndSend(w, http.StatusOK, banners)
 }
 
-func (h BannerHandler) CreateBanner(w http.ResponseWriter, r *http.Request) {
+func (h *BannerHandler) CreateBanner(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		sending.SendErrorMsg(w, http.StatusInternalServerError, errMsgCantReadBody)
@@ -144,21 +146,7 @@ func (h BannerHandler) CreateBanner(w http.ResponseWriter, r *http.Request) {
 	sending.JSONMarshallAndSend(w, http.StatusCreated, BannerIdMsg{ID: id})
 }
 
-func IDFromVars(vars map[string]string) (int, error) {
-	idStr, ok := vars[idParamName]
-	if !ok {
-		return 0, errors.New(noIDinParamsMsg)
-	}
-
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		return 0, errors.New(badIDMsg)
-	}
-
-	return id, nil
-}
-
-func (h BannerHandler) UpdatePatial(w http.ResponseWriter, r *http.Request) {
+func (h *BannerHandler) UpdatePatial(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
 	id, err := IDFromVars(vars)
@@ -212,7 +200,7 @@ func (h BannerHandler) DeleteBanner(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h BannerHandler) handleServiceError(w http.ResponseWriter, err error) {
+func (h *BannerHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrBannerNotFound):
 		sending.SendErrorMsg(w, http.StatusBadRequest, errMsgBannerNotFound)
@@ -223,7 +211,7 @@ func (h BannerHandler) handleServiceError(w http.ResponseWriter, err error) {
 	}
 }
 
-func (h BannerHandler) checkAndSetCorrectTypesToBannerPartial(bannerPartial bannermodels.BannerPartialUpdate) (bannermodels.BannerPartialUpdate, error) {
+func (h *BannerHandler) checkAndSetCorrectTypesToBannerPartial(bannerPartial bannermodels.BannerPartialUpdate) (bannermodels.BannerPartialUpdate, error) {
 	if bannerPartial.IsActive != nil {
 		_, ok := bannerPartial.IsActive.(bool)
 		if !ok {

@@ -4,14 +4,15 @@ import (
 	bannermodels "banner/internal/models/banner"
 	usermodels "banner/internal/models/user"
 	"context"
+	"encoding/json"
 	"errors"
 )
 
 type bannerRepo interface {
-	GetBanner(ctx context.Context, tagID int, featureID int) (bannermodels.Banner, error)
+	GetUserBanner(ctx context.Context, tagID int, featureID int) (bannermodels.Banner, error)
 	GetFiltered(ctx context.Context, filter bannermodels.FilterSchema) ([]bannermodels.Banner, error)
 	CreateBanner(ctx context.Context, banner bannermodels.Banner) (int, error)
-	PartialUpdateBanner(ctx context.Context, bannerPartial bannermodels.BannerPartialUpdate) error
+	PartialUpdateBanner(ctx context.Context, id int, bannerPartial bannermodels.BannerPartialUpdate) error
 	DeleteBanner(ctx context.Context, id int) error
 }
 
@@ -25,14 +26,15 @@ type BannerService struct {
 	cache bannerCache
 }
 
-func NewBannerService(bannerRepo bannerRepo) *BannerService {
+func NewBannerService(bannerRepo bannerRepo, bannerCache bannerCache) *BannerService {
 	return &BannerService{
-		repo: bannerRepo,
+		repo:  bannerRepo,
+		cache: bannerCache,
 	}
 }
 
 // get banner from cahe and if not exists get from repo and set to cache
-func (s BannerService) getOrSetUserBannerFromCache(ctx context.Context, tagID int, featureID int) (bannermodels.Banner, error) {
+func (s *BannerService) getOrSetUserBannerFromCache(ctx context.Context, tagID int, featureID int) (bannermodels.Banner, error) {
 	b, err := s.cache.GetBanner(ctx, tagID, featureID)
 
 	// NO err
@@ -45,7 +47,7 @@ func (s BannerService) getOrSetUserBannerFromCache(ctx context.Context, tagID in
 	}
 
 	// If not found in cache
-	b, err = s.repo.GetBanner(ctx, tagID, featureID)
+	b, err = s.repo.GetUserBanner(ctx, tagID, featureID)
 
 	switch {
 	case errors.Is(err, ErrDBBannerNotFound):
@@ -62,12 +64,12 @@ func (s BannerService) getOrSetUserBannerFromCache(ctx context.Context, tagID in
 	return b, nil
 }
 
-func (s BannerService) GetUserBanner(ctx context.Context, user usermodels.User, tagID int, featureID int, useLastRevision bool) (map[string]interface{}, error) {
+func (s *BannerService) GetUserBanner(ctx context.Context, user usermodels.User, tagID int, featureID int, useLastRevision bool) ([]byte, error) {
 	var b bannermodels.Banner
 	var err error
 
 	if useLastRevision {
-		b, err = s.repo.GetBanner(ctx, tagID, featureID)
+		b, err = s.repo.GetUserBanner(ctx, tagID, featureID)
 
 		switch {
 		case errors.Is(err, ErrDBBannerNotFound):
@@ -87,10 +89,15 @@ func (s BannerService) GetUserBanner(ctx context.Context, user usermodels.User, 
 		return nil, ErrBannerNotFound
 	}
 
-	return b.Content, nil
+	contentJSON, err := json.Marshal(b.Content)
+	if err != nil {
+		return nil, err // TODO
+	}
+
+	return contentJSON, nil
 }
 
-func (s BannerService) BannerList(ctx context.Context, filter bannermodels.FilterSchema) ([]bannermodels.Banner, error) {
+func (s *BannerService) BannerList(ctx context.Context, filter bannermodels.FilterSchema) ([]bannermodels.Banner, error) {
 	banners, err := s.repo.GetFiltered(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -98,7 +105,7 @@ func (s BannerService) BannerList(ctx context.Context, filter bannermodels.Filte
 	return banners, nil
 }
 
-func (s BannerService) CreateBanner(ctx context.Context, banner bannermodels.Banner) (int, error) {
+func (s *BannerService) CreateBanner(ctx context.Context, banner bannermodels.Banner) (int, error) {
 	id, err := s.repo.CreateBanner(ctx, banner)
 
 	switch {
@@ -111,8 +118,8 @@ func (s BannerService) CreateBanner(ctx context.Context, banner bannermodels.Ban
 	return id, nil
 }
 
-func (s BannerService) PartialUpdateBanner(ctx context.Context, id int, bannerPartial bannermodels.BannerPartialUpdate) error {
-	err := s.repo.PartialUpdateBanner(ctx, bannerPartial)
+func (s *BannerService) PartialUpdateBanner(ctx context.Context, id int, bannerPartial bannermodels.BannerPartialUpdate) error {
+	err := s.repo.PartialUpdateBanner(ctx, id, bannerPartial)
 
 	switch {
 	case errors.Is(err, ErrDBBannerAlreadyExists):
@@ -124,7 +131,7 @@ func (s BannerService) PartialUpdateBanner(ctx context.Context, id int, bannerPa
 	return nil
 }
 
-func (s BannerService) DeleteBanner(ctx context.Context, id int) error {
+func (s *BannerService) DeleteBanner(ctx context.Context, id int) error {
 	err := s.repo.DeleteBanner(ctx, id)
 
 	switch {

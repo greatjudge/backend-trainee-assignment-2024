@@ -1,13 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"net/url"
 	"strconv"
 )
-
-type userTokenT string
-
-const UserTokenKey userTokenT = "user token"
 
 const (
 	tagIDParamName           = "tag_id"
@@ -29,7 +26,7 @@ const (
 
 	noIDinParamsMsg = "нужно указать id"
 
-	errMsgUserTokenNotFound = "user_token not found in context"
+	errMsgUserNotFoundInCTX = "user not found in context"
 	errMsgCantReadBody      = "can not read body"
 
 	errMsgBannerNotFound      = "баннер не найден"
@@ -39,6 +36,10 @@ const (
 	defaultOffset         = 0
 	defaultUseLastVersion = false
 )
+
+type BannerIdMsg struct {
+	ID int `json:"banner_id"`
+}
 
 func featureIDFromQuery(queryParams url.Values) (int, error) {
 	return strconv.Atoi(queryParams.Get(tagIDParamName))
@@ -60,6 +61,16 @@ func StrToUint(str string) (uint, error) {
 	return uint(val), nil
 }
 
-type BannerIdMsg struct {
-	ID int `json:"banner_id"`
+func IDFromVars(vars map[string]string) (int, error) {
+	idStr, ok := vars[idParamName]
+	if !ok {
+		return 0, errors.New(noIDinParamsMsg)
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return 0, errors.New(badIDMsg)
+	}
+
+	return id, nil
 }
