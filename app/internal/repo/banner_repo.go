@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/georgysavva/scany/pgxscan"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -71,6 +72,36 @@ const (
 
 	stmtUpdateFeatureID = `
 	UPDATE banner_relation SET feature_id=$2 WHERE banner_id=$1;
+	`
+
+	stmtBannerList = `
+	SELECT
+		b.id,
+		fb.feature_id,
+		(SELECT ARRAY_AGG(tag_id) FROM banner_relation AS br WHERE br.banner_id = b.id) as tag_ids,
+		b.is_active,
+		b.created_at,
+		b.updated_at
+	FROM banner as b
+	ORDER BY b.created_at DESC
+	LIMIT $1 OFFSET $2
+	`
+
+	stmtBannerListWithFilterTemplate = `
+	with filtered_banners as (
+	  SELECT banner_id from banner_relation WHERE %v
+	)
+	
+	SELECT
+		b.id,
+		fb.feature_id,
+		(SELECT ARRAY_AGG(tag_id) FROM banner_relation AS br WHERE br.banner_id = b.id) as tag_ids,
+		b.is_active,
+		b.created_at,
+		b.updated_at
+	FROM banner as b JOIN filtered_banners as fb ON (b.id = fb.banner_id)
+	order by b.created_at DESC
+	LIMIT $1 OFFSET $2;
 	`
 )
 
@@ -223,8 +254,6 @@ func (repo BannerRepo) PartialUpdateBanner(ctx context.Context, id int, bannerPa
 		ct, err := br.Exec()
 
 		if err != nil {
-			tx.Rollback(ctx)
-
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == SQLDuplicateErrCode {
 				return service.ErrBannerAlreadyExists
@@ -242,4 +271,63 @@ func (repo BannerRepo) PartialUpdateBanner(ctx context.Context, id int, bannerPa
 
 	tx.Commit(ctx)
 	return nil
+}
+
+func (repo BannerRepo) GetFiltered(ctx context.Context, filter bannermodels.FilterSchema) ([]bannermodels.Banner, error) {
+	if !(filter.HasFeatureID || filter.HasTagID) {
+		return repo.getFiltered(ctx, filter)
+	}
+	return repo.getFilteredWithFeatureAndTagFilter(ctx, filter)
+}
+
+func (repo BannerRepo) getFiltered(ctx context.Context, filter bannermodels.FilterSchema) ([]bannermodels.Banner, error) {
+	var dbBanners []bannermodels.BannerDB
+	err := pgxscan.Select(ctx, repo.db, &dbBanners, stmtBannerList, filter.Limit, filter.Offset)
+	if err != nil {
+		return nil, err
+	}
+
+	return bannermodels.SliceBannerDBToBanners(dbBanners)
+}
+
+func (repo BannerRepo) getFilteredWithFeatureAndTagFilter(ctx context.Context, filter bannermodels.FilterSchema) ([]bannermodels.Banner, error) {
+	var stmtWhereFilter string
+	args := []interface{}{
+		filter.Limit,
+		filter.Offset,
+	}
+
+	switch {
+	case filter.HasFeatureID && filter.HasTagID:
+		stmtWhereFilter = "feature_id=$3 AND tag_id=$4"
+		args = append(args, filter.FeatureID, filter.TagID)
+	case filter.HasFeatureID:
+		stmtWhereFilter = "feature_id=$3"
+		args = append(args, filter.FeatureID)
+	case filter.HasTagID:
+		args = append(args, filter.TagID)
+		stmtWhereFilter = "tag_id=$3"
+	default:
+		return nil, fmt.Errorf(
+			"at least one of the HasFeatureID and HasTagID should be true, got: %v, %v",
+			filter.HasFeatureID,
+			filter.HasTagID,
+		)
+	}
+
+	stmtBannerListWithFilter := fmt.Sprintf(stmtBannerListWithFilterTemplate, stmtWhereFilter)
+
+	var dbBanners []bannermodels.BannerDB
+	err := pgxscan.Select(
+		ctx,
+		repo.db,
+		&dbBanners,
+		stmtBannerListWithFilter,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return bannermodels.SliceBannerDBToBanners(dbBanners)
 }
