@@ -83,7 +83,7 @@ func (repo BannerRepo) CreateBanner(ctx context.Context, banner bannermodels.Ban
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Commit(ctx)
+	defer tx.Rollback(ctx)
 
 	contentJSON, err := json.Marshal(banner.Content)
 	if err != nil {
@@ -103,8 +103,6 @@ func (repo BannerRepo) CreateBanner(ctx context.Context, banner bannermodels.Ban
 	err = row.Scan(&id)
 
 	if err != nil {
-		tx.Rollback(ctx)
-
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == SQLDuplicateErrCode {
 			return 0, service.ErrBannerAlreadyExists
@@ -113,6 +111,7 @@ func (repo BannerRepo) CreateBanner(ctx context.Context, banner bannermodels.Ban
 		return 0, err
 	}
 
+	tx.Commit(ctx)
 	return id, nil
 }
 
