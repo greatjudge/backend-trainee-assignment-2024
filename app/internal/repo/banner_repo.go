@@ -103,6 +103,11 @@ const (
 	order by b.created_at DESC
 	LIMIT $1 OFFSET $2;
 	`
+
+	stmtDeleteBanner = `
+	DELETE from banner WHERE "id" = $1;
+	DELETE from banner_relation WHERE banner_id = $1;
+	`
 )
 
 type BannerRepo struct {
@@ -330,4 +335,24 @@ func (repo BannerRepo) getFilteredWithFeatureAndTagFilter(ctx context.Context, f
 	}
 
 	return bannermodels.SliceBannerDBToBanners(dbBanners)
+}
+
+func (repo BannerRepo) DeleteBanner(ctx context.Context, id int) error {
+	tx, err := repo.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	ct, err := tx.Exec(ctx, stmtDeleteBanner, id)
+	if err != nil {
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return service.ErrDBBannerNotFound
+	}
+
+	tx.Commit(ctx)
+	return nil
 }
