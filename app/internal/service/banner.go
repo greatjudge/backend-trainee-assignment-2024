@@ -93,7 +93,7 @@ func (s BannerService) GetUserBanner(ctx context.Context, user usermodels.User, 
 func (s BannerService) BannerList(ctx context.Context, filter bannermodels.FilterSchema) ([]bannermodels.Banner, error) {
 	banners, err := s.repo.GetFiltered(ctx, filter)
 	if err != nil {
-		return nil, err // TODO
+		return nil, err
 	}
 	return banners, nil
 }
@@ -126,8 +126,13 @@ func (s BannerService) PartialUpdateBanner(ctx context.Context, id int, bannerPa
 
 func (s BannerService) DeleteBanner(ctx context.Context, id int) error {
 	err := s.repo.DeleteBanner(ctx, id)
-	if err != nil {
-		return err // TODO
+
+	switch {
+	case errors.Is(err, ErrDBBannerNotFound):
+		return ErrBannerNotFound
+	case err != nil:
+		return err
 	}
+
 	return nil
 }

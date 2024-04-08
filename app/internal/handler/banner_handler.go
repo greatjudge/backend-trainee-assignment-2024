@@ -3,6 +3,7 @@ package handler
 import (
 	bannermodels "banner/internal/models/banner"
 	"banner/internal/sending"
+	"banner/internal/service"
 	"context"
 	"encoding/json"
 	"errors"
@@ -131,7 +132,7 @@ func (h BannerHandler) CreateBanner(w http.ResponseWriter, r *http.Request) {
 	var bannerReq bannermodels.BannerRequest
 	err = json.Unmarshal(body, &bannerReq)
 	if err != nil {
-		sending.SendErrorMsg(w, http.StatusBadRequest, err.Error()) // TODO
+		sending.SendErrorMsg(w, http.StatusBadRequest, err.Error()) // TODO normal err msg
 		return
 	}
 
@@ -175,7 +176,7 @@ func (h BannerHandler) UpdatePatial(w http.ResponseWriter, r *http.Request) {
 	var bannerPartial bannermodels.BannerPartialUpdate
 	err = json.Unmarshal(body, &bannerPartial)
 	if err != nil {
-		sending.SendErrorMsg(w, http.StatusBadRequest, err.Error()) // TODO
+		sending.SendErrorMsg(w, http.StatusBadRequest, err.Error()) // TODO normal err msg
 		return
 	}
 
@@ -212,7 +213,14 @@ func (h BannerHandler) DeleteBanner(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h BannerHandler) handleServiceError(w http.ResponseWriter, err error) {
-	// TODO
+	switch {
+	case errors.Is(err, service.ErrBannerNotFound):
+		sending.SendErrorMsg(w, http.StatusBadRequest, errMsgBannerNotFound)
+	case errors.Is(err, service.ErrBannerAlreadyExists):
+		sending.SendErrorMsg(w, http.StatusBadRequest, errMsgBannerAlreadyExists)
+	case err != nil:
+		sending.SendErrorMsg(w, http.StatusInternalServerError, err.Error())
+	}
 }
 
 func (h BannerHandler) checkAndSetCorrectTypesToBannerPartial(bannerPartial bannermodels.BannerPartialUpdate) (bannermodels.BannerPartialUpdate, error) {
