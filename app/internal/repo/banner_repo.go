@@ -6,44 +6,72 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 
 	bannermodels "banner/internal/models/banner"
 	"banner/internal/service"
+	"banner/internal/tools"
 )
 
 const (
-	bannerTableName = "banner"
+	SQLDuplicateErrCode = "23505"
 
-	stmtCreateBannerTemplate = `
-	INSERT INTO %v (tag_ids, feature_id, content, is_active)
-	VALUES ($1, $2, $3, $4)
-	WHERE NOT EXISTS (SELECT id FROM %v WHERE feature_id=$2 AND tag_ids && $1) 
-	RETURNING id;
+	stmtCreateBanner = `
+	with create_banner AS (
+		INSERT into banner (is_active, "content") VALUES ($3, $4) RETURNING "id"
+	),
+	create_banner_relation as (
+		INSERT into banner_relation (banner_id, feature_id, tag_id)
+		SELECT create_banner.id as banner_id, $2 as feature_id, UNNEST($1) as tag_id FROM create_banner
+	)
+	  
+	SELECT "id" FROM create_banner;
 	`
 
-	stmtSelectBannerTemplate = `
-	SELECT id, tag_ids, feature_id, content, is_active, created_at, updated_at
-	FROM %v"
+	stmtGetUserBanner = `
+	with find_banner as (
+		SELECT banner_id, tag_id, feature_id FROM banner_relation WHERE feature_id=$2 AND tag_id=$1
+	)
+	
+	SELECT
+		b.id,
+		fb.feature_id,
+		(SELECT ARRAY_AGG(tag_id) FROM banner_relation AS br WHERE br.banner_id = b.id) as tag_ids,
+		b.is_active,
+		b.created_at,
+		b.updated_at
+	FROM banner as b JOIN find_banner as fb ON (b.id = fb.banner_id);
 	`
 
-	stmtCheckBannerConsistentTemplate = `
-	SELECT id FROM %v WHERE id != $1 AND feature_id=$2 AND $3 = ANY(tag_ids);
+	stmtGetBanerByID = `
+	SELECT
+		b.id,
+		fb.feature_id,
+		(SELECT ARRAY_AGG(tag_id) FROM banner_relation AS br WHERE br.banner_id = b.id) as tag_ids,
+		b.is_active,
+		b.created_at,
+		b.updated_at
+	FROM banner as b
+	WHERE b.id = $1;
 	`
 
-	stmtUpdateBannerTemplate = `
-	UPDATE %v SET tag_ids=$1, feature_id=$2, content=$3, is_active=$4 WHERE id=$5
+	stmtUpdateBanner = `
+	UPDATE banner SET is_active=$2, "content"=$3 WHERE "id"=$1;
 	`
-)
 
-var (
-	stmtSelectBanner          = fmt.Sprintf(stmtSelectBannerTemplate, bannerTableName)
-	stmtCreateBanner          = fmt.Sprintf(stmtCreateBannerTemplate, bannerTableName, bannerTableName)
-	stmtGetUserBanner         = stmtSelectBanner + " WHERE feature_id=$1 AND $2 = ANY(tag_ids);"
-	stmtCheckBannerConsistent = fmt.Sprintf(stmtCheckBannerConsistentTemplate, bannerTableName)
-	stmtGetBaner              = stmtSelectBanner + " WHERE id=$1"
-	stmtUpdateBanner          = fmt.Sprintf(stmtUpdateBannerTemplate, bannerTableName)
+	stmtDeleteOldTagIDs = `
+	DELETE from banner_relation WHERE banner_id=$1 AND feature_id=$2 AND tag_id = ANY($3);
+	`
+
+	stmtInsertNewTagIDs = `
+	INSERT INTO banner_relation (banner_id, feature_id, tag_id) SELECT $1, $2, UNNEST($3);
+	`
+
+	stmtUpdateFeatureID = `
+	UPDATE banner_relation SET feature_id=$2 WHERE banner_id=$1;
+	`
 )
 
 type BannerRepo struct {
@@ -51,14 +79,37 @@ type BannerRepo struct {
 }
 
 func (repo BannerRepo) CreateBanner(ctx context.Context, banner bannermodels.Banner) (int, error) {
-	row := repo.db.QueryRow(ctx, stmtCreateBanner, banner.TagIDs, banner.FeatureID, banner.Content, banner.IsActive)
+	tx, err := repo.db.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Commit(ctx)
+
+	contentJSON, err := json.Marshal(banner.Content)
+	if err != nil {
+		return 0, err
+	}
+
+	row := tx.QueryRow(
+		ctx,
+		stmtCreateBanner,
+		banner.TagIDs,
+		banner.FeatureID,
+		contentJSON,
+		banner.IsActive,
+	)
 
 	var id int
-	err := row.Scan(&id)
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		return 0, service.ErrDBBannerAlreadyExists
-	case err != nil:
+	err = row.Scan(&id)
+
+	if err != nil {
+		tx.Rollback(ctx)
+
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == SQLDuplicateErrCode {
+			return 0, service.ErrBannerAlreadyExists
+		}
+
 		return 0, err
 	}
 
@@ -66,6 +117,7 @@ func (repo BannerRepo) CreateBanner(ctx context.Context, banner bannermodels.Ban
 }
 
 func (repo BannerRepo) GetUserBanner(ctx context.Context, tagID int, featureID int) (bannermodels.Banner, error) {
+	// ADD TRANSATION ?
 	row := repo.db.QueryRow(ctx, stmtGetUserBanner, tagID, featureID)
 
 	var contentJSON []byte
@@ -99,22 +151,13 @@ func (repo BannerRepo) GetUserBanner(ctx context.Context, tagID int, featureID i
 }
 
 func (repo BannerRepo) PartialUpdateBanner(ctx context.Context, id int, bannerPartial bannermodels.BannerPartialUpdate) error {
-	return repo.partialUpdateBanner(
-		ctx,
-		id,
-		bannerPartial,
-		bannerPartial.FeatureID != nil || bannerPartial.TagIDs != nil,
-	)
-}
-
-func (repo BannerRepo) partialUpdateBanner(ctx context.Context, id int, bannerPartial bannermodels.BannerPartialUpdate, checkConsistent bool) error {
 	tx, err := repo.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Commit(ctx)
+	defer tx.Rollback(ctx)
 
-	row := repo.db.QueryRow(ctx, stmtGetBaner, id)
+	row := tx.QueryRow(ctx, stmtGetBanerByID, id)
 
 	var contentJSON []byte
 	var banner bannermodels.Banner
@@ -130,57 +173,74 @@ func (repo BannerRepo) partialUpdateBanner(ctx context.Context, id int, bannerPa
 	)
 
 	if err != nil {
-		tx.Rollback(ctx)
-
 		if errors.Is(err, pgx.ErrNoRows) {
 			return service.ErrBannerNotFound
 		}
 		return err
 	}
 
-	updatedBanner, err := bannermodels.UpdatedBanner(banner, bannerPartial)
+	err = json.Unmarshal(contentJSON, &banner.Content)
 	if err != nil {
-		tx.Rollback(ctx)
 		return err
 	}
 
-	if checkConsistent {
-		row = repo.db.QueryRow(
-			ctx,
-			stmtCheckBannerConsistent,
-			updatedBanner.ID,
-			updatedBanner.FeatureID,
-			updatedBanner.TagIDs,
-		)
+	updatedBanner, err := bannermodels.UpdatedBanner(banner, bannerPartial)
+	if err != nil {
+		return err
+	}
 
-		var idBad int
-		err = row.Scan(&idBad)
-		// NO err
-		if err == nil {
-			tx.Rollback(ctx)
-			return service.ErrDBBannerAlreadyExists
+	batch := &pgx.Batch{}
+
+	if bannerPartial.TagIDs != nil {
+		// banner.TagIDs is old tags
+		toDelete := tools.SliceDiff(banner.TagIDs, updatedBanner.TagIDs)
+		toInsert := tools.SliceDiff(updatedBanner.TagIDs, banner.TagIDs)
+
+		if len(toDelete) != 0 {
+			batch.Queue(stmtDeleteOldTagIDs, id, banner.FeatureID, toDelete)
+		}
+
+		if len(toInsert) != 0 {
+			batch.Queue(stmtInsertNewTagIDs, id, banner.FeatureID, toInsert)
 		}
 	}
 
-	res, err := repo.db.Exec(
-		ctx,
-		stmtUpdateBanner,
-		updatedBanner.TagIDs,
-		updatedBanner.FeatureID,
-		updatedBanner.Content,
-		updatedBanner.IsActive,
-		updatedBanner.ID,
-	)
-
-	if err != nil {
-		tx.Rollback(ctx)
-		return err
+	if bannerPartial.FeatureID != nil {
+		batch.Queue(stmtUpdateFeatureID, id, updatedBanner.FeatureID)
 	}
 
-	if res.RowsAffected() == 0 {
-		tx.Rollback(ctx)
-		return fmt.Errorf("while updating banner with id=%v has deleted", id)
+	if bannerPartial.IsActive != nil || bannerPartial.Content != nil {
+		newContentJSON, err := json.Marshal(updatedBanner.Content)
+		if err != nil {
+			return err
+		}
+
+		batch.Queue(stmtUpdateBanner, id, updatedBanner.IsActive, newContentJSON)
 	}
 
+	br := tx.SendBatch(ctx, batch)
+
+	for i := 0; i != batch.Len(); i++ {
+		ct, err := br.Exec()
+
+		if err != nil {
+			tx.Rollback(ctx)
+
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == SQLDuplicateErrCode {
+				return service.ErrBannerAlreadyExists
+			}
+		}
+
+		if ct.RowsAffected() == 0 {
+			return fmt.Errorf(
+				"err update banner with id=%d, rows_affected=%v",
+				id,
+				ct.RowsAffected(),
+			)
+		}
+	}
+
+	tx.Commit(ctx)
 	return nil
 }
