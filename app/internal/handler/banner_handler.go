@@ -141,6 +141,7 @@ func (h *BannerHandler) CreateBanner(w http.ResponseWriter, r *http.Request) {
 	id, err := h.service.CreateBanner(r.Context(), bannerReq.ToBanner())
 	if err != nil {
 		h.handleServiceError(w, err)
+		return
 	}
 
 	sending.JSONMarshallAndSend(w, http.StatusCreated, BannerIdMsg{ID: id})
@@ -171,6 +172,7 @@ func (h *BannerHandler) UpdatePatial(w http.ResponseWriter, r *http.Request) {
 	bannerPartial, err = h.checkAndSetCorrectTypesToBannerPartial(bannerPartial)
 	if err != nil {
 		sending.SendErrorMsg(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	err = h.service.PartialUpdateBanner(r.Context(), id, bannerPartial)
@@ -220,7 +222,7 @@ func (h *BannerHandler) checkAndSetCorrectTypesToBannerPartial(bannerPartial ban
 	}
 
 	if bannerPartial.FeatureID != nil {
-		featureID, ok := bannerPartial.IsActive.(float64)
+		featureID, ok := bannerPartial.FeatureID.(float64)
 		if !ok {
 			return bannerPartial, errors.New(badFeatureIDMsg)
 		}

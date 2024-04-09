@@ -10,11 +10,11 @@ migration-create:
 	goose -dir "$(MIGRATION_FOLDER)" -s create "$(name)" sql
 
 .PHONY: test-migration-up
-migration-up:
+test-migration-up:
 	goose -dir "$(MIGRATION_FOLDER)" postgres "$(POSTGRES_SETUP_TEST)" up
 
 .PHONY: test-migration-down
-migration-down:
+test-migration-down:
 	goose -dir "$(MIGRATION_FOLDER)" postgres "$(POSTGRES_SETUP_TEST)" down
 
 .PHONY: test-db-up
@@ -28,4 +28,10 @@ test-db-down:
 .PHONY: run-app
 run-app:
 	make test-migration-up
-	go run cmd/http_api/main.go
+	go run cmd/main.go
+
+.test-integration:
+	$(info Running integration tests...)
+	go test -v -coverprofile=cover.out ./tests/... -cover
+	go tool cover -html=cover.out -o cover.html
+test-integr: .test-integration ##запуск всех интеграционных тестов

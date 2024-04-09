@@ -1,2 +1,4 @@
 *.txt
 .env
+*.html
+cover.out

@@ -2,17 +2,18 @@ package main
 
 import (
 	"banner/internal/cache"
+	"banner/internal/db"
 	"banner/internal/handler"
 	"banner/internal/middleware"
 	"banner/internal/repo"
 	"banner/internal/service"
+
 	"context"
 	"log"
 	"net/http"
 	"os"
 
 	"github.com/gorilla/mux"
-	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/joho/godotenv"
 )
 
@@ -23,26 +24,17 @@ func init() {
 	}
 }
 
-func newDB(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
-	pool, err := pgxpool.Connect(ctx, dsn)
-	if err != nil {
-		return nil, err
-	}
-	return pool, nil
-}
-
-func getPostgresDB(ctx context.Context) *pgxpool.Pool {
+func getPostgresDB(ctx context.Context) *db.Database {
 	psgDsn, ok := os.LookupEnv("POSTGRES_DB_DSN")
 	if !ok {
 		panic("no POSTGRES_DB_DSN in env vars")
 	}
-	database, err := newDB(ctx, psgDsn)
+	database, err := db.NewDB(ctx, psgDsn)
 	if err != nil {
 		log.Panic(err)
 	}
 	return database
 }
-
 func register(router *mux.Router, bannerHandler *handler.BannerHandler) http.Handler {
 	router.HandleFunc("/user_banner", bannerHandler.GetUserBanner).Methods(http.MethodGet)
 
@@ -69,14 +61,14 @@ func main() {
 	bannerHandler := handler.NewBannerHandler(bannerService)
 
 	router := mux.NewRouter()
-	register(router, &bannerHandler)
+	appHandler := register(router, &bannerHandler)
 
 	addr, ok := os.LookupEnv("HOST_PORT")
 	if !ok {
 		panic("no HOST_PORT in env vars")
 	}
 
-	if err := http.ListenAndServe(addr, router); err != nil {
+	if err := http.ListenAndServe(addr, appHandler); err != nil {
 		log.Panic(err)
 	}
 }

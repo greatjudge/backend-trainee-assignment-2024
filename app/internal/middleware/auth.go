@@ -16,7 +16,6 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		user := usermodels.User{IsAdmin: true}
 
 		ctx := context.WithValue(r.Context(), UserKey, user) // TODO change, add logic
-
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

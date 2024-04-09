@@ -5,22 +5,27 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
-	"github.com/georgysavva/scany/pgxscan"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
 
 	bannermodels "banner/internal/models/banner"
 	"banner/internal/service"
 	"banner/internal/tools"
 )
 
-type BannerRepo struct {
-	db *pgxpool.Pool
+type database interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+	QueryRow(ctx context.Context, query string, args ...interface{}) pgx.Row
+	Select(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 }
 
-func NewBannerRepo(db *pgxpool.Pool) *BannerRepo {
+type BannerRepo struct {
+	db database
+}
+
+func NewBannerRepo(db database) *BannerRepo {
 	return &BannerRepo{
 		db: db,
 	}
@@ -43,8 +48,8 @@ func (repo *BannerRepo) CreateBanner(ctx context.Context, banner bannermodels.Ba
 		stmtCreateBanner,
 		banner.TagIDs,
 		banner.FeatureID,
-		contentJSON,
 		banner.IsActive,
+		contentJSON,
 	)
 
 	var id int
@@ -71,13 +76,13 @@ func (repo *BannerRepo) GetUserBanner(ctx context.Context, tagID int, featureID 
 	var banner bannermodels.Banner
 
 	err := row.Scan(
-		banner.ID,
-		banner.TagIDs,
-		banner.FeatureID,
-		contentJSON,
-		banner.IsActive,
-		banner.CreatedAt,
-		banner.UpdatedAt,
+		&banner.ID,
+		&banner.FeatureID,
+		&banner.TagIDs,
+		&contentJSON,
+		&banner.IsActive,
+		&banner.CreatedAt,
+		&banner.UpdatedAt,
 	)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -86,13 +91,10 @@ func (repo *BannerRepo) GetUserBanner(ctx context.Context, tagID int, featureID 
 		return bannermodels.Banner{}, err
 	}
 
-	var content map[string]interface{}
-	err = json.Unmarshal(contentJSON, &content)
+	err = json.Unmarshal(contentJSON, &banner.Content)
 	if err != nil {
 		return bannermodels.Banner{}, err
 	}
-
-	banner.Content = content
 
 	return banner, nil
 }
@@ -104,19 +106,19 @@ func (repo *BannerRepo) PartialUpdateBanner(ctx context.Context, id int, bannerP
 	}
 	defer tx.Rollback(ctx)
 
-	row := tx.QueryRow(ctx, stmtGetBanerByID, id)
+	row := tx.QueryRow(ctx, stmtGetBannerByID, id)
 
 	var contentJSON []byte
 	var banner bannermodels.Banner
 
 	err = row.Scan(
-		banner.ID,
-		banner.TagIDs,
-		banner.FeatureID,
-		contentJSON,
-		banner.IsActive,
-		banner.CreatedAt,
-		banner.UpdatedAt,
+		&banner.ID,
+		&banner.FeatureID,
+		&banner.TagIDs,
+		&contentJSON,
+		&banner.IsActive,
+		&banner.CreatedAt,
+		&banner.UpdatedAt,
 	)
 
 	if err != nil {
@@ -156,13 +158,23 @@ func (repo *BannerRepo) PartialUpdateBanner(ctx context.Context, id int, bannerP
 		batch.Queue(stmtUpdateFeatureID, id, updatedBanner.FeatureID)
 	}
 
-	if bannerPartial.IsActive != nil || bannerPartial.Content != nil {
-		newContentJSON, err := json.Marshal(updatedBanner.Content)
-		if err != nil {
-			return err
-		}
+	updateArgs := []interface{}{id}
+	updateArgsExtend, updateFields, err := repo.formUpdateArgsFields(
+		bannerPartial,
+		updatedBanner,
+		len(updateArgs)+1,
+	)
+	if err != nil {
+		return err
+	}
 
-		batch.Queue(stmtUpdateBanner, id, updatedBanner.IsActive, newContentJSON)
+	if len(updateArgsExtend) != 0 {
+		updateArgs = append(updateArgs, updateArgsExtend...)
+
+		updateSetString := strings.Join(updateFields, ", ")
+		stmtUpdateBanner := fmt.Sprintf(stmtUpdateBannerTemplate, updateSetString)
+
+		batch.Queue(stmtUpdateBanner, updateArgs...)
 	}
 
 	br := tx.SendBatch(ctx, batch)
@@ -175,18 +187,27 @@ func (repo *BannerRepo) PartialUpdateBanner(ctx context.Context, id int, bannerP
 			if errors.As(err, &pgErr) && pgErr.Code == SQLDuplicateErrCode {
 				return service.ErrBannerAlreadyExists
 			}
+			return err
 		}
 
 		if ct.RowsAffected() == 0 {
 			return fmt.Errorf(
-				"err update banner with id=%d, rows_affected=%v",
+				"err update banner with id=%d, rows_affected=%v must be >= 1",
 				id,
 				ct.RowsAffected(),
 			)
 		}
 	}
 
-	tx.Commit(ctx)
+	err = br.Close()
+	if err != nil {
+		return err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -199,7 +220,7 @@ func (repo *BannerRepo) GetFiltered(ctx context.Context, filter bannermodels.Fil
 
 func (repo *BannerRepo) getFiltered(ctx context.Context, filter bannermodels.FilterSchema) ([]bannermodels.Banner, error) {
 	var dbBanners []bannermodels.BannerDB
-	err := pgxscan.Select(ctx, repo.db, &dbBanners, stmtBannerList, filter.Limit, filter.Offset)
+	err := repo.db.Select(ctx, &dbBanners, stmtBannerList, filter.Limit, filter.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -235,9 +256,8 @@ func (repo *BannerRepo) getFilteredWithFeatureAndTagFilter(ctx context.Context, 
 	stmtBannerListWithFilter := fmt.Sprintf(stmtBannerListWithFilterTemplate, stmtWhereFilter)
 
 	var dbBanners []bannermodels.BannerDB
-	err := pgxscan.Select(
+	err := repo.db.Select(
 		ctx,
-		repo.db,
 		&dbBanners,
 		stmtBannerListWithFilter,
 		args...,
@@ -265,6 +285,54 @@ func (repo *BannerRepo) DeleteBanner(ctx context.Context, id int) error {
 		return service.ErrDBBannerNotFound
 	}
 
-	tx.Commit(ctx)
+	err = tx.Commit(ctx)
+	if err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (repo *BannerRepo) formUpdateArgsFields(
+	bannerPartial bannermodels.BannerPartialUpdate,
+	updatedBanner bannermodels.Banner,
+	nextArgnum int,
+) ([]interface{}, []string, error) {
+
+	updateArgs := make([]interface{}, 0, 3)
+	updateFields := make([]string, 0, 3)
+
+	if bannerPartial.FeatureID != nil {
+		updateArgs = append(updateArgs, updatedBanner.FeatureID)
+		updateFields = append(
+			updateFields,
+			fmt.Sprintf("feature_id = $%d", nextArgnum), // TODO move str to const
+		)
+		nextArgnum += 1
+	}
+
+	if bannerPartial.IsActive != nil {
+		updateArgs = append(updateArgs, bannerPartial.IsActive)
+		updateFields = append(
+			updateFields,
+			fmt.Sprintf("is_active = $%d", nextArgnum), // TODO move str to const
+		)
+		nextArgnum += 1
+	}
+
+	if bannerPartial.Content != nil {
+		newContentJSON, err := json.Marshal(updatedBanner.Content)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		updateArgs = append(updateArgs, newContentJSON)
+		updateFields = append(
+			updateFields,
+			fmt.Sprintf(`"content" = $%d`, nextArgnum), // TODO move str to const
+		)
+		nextArgnum += 1
+	}
+
+	return updateArgs, updateFields, nil
 }

@@ -42,7 +42,7 @@ type BannerIdMsg struct {
 }
 
 func featureIDFromQuery(queryParams url.Values) (int, error) {
-	return strconv.Atoi(queryParams.Get(tagIDParamName))
+	return strconv.Atoi(queryParams.Get(featureIDParamName))
 }
 
 func tagIDFromQuery(queryParams url.Values) (int, error) {
