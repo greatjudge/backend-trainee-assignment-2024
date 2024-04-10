@@ -20,6 +20,9 @@ const (
 	contentTypeHeader = "Content-Type"
 	contentTypeJSON   = "application/json"
 
+	tokenHeaderName = "token"
+	adminToken      = "admin_token"
+
 	bannerTableName         = "banner"
 	bannerRelationTableName = "banner_relation"
 
@@ -70,6 +73,7 @@ func makeClientRequest(
 		return nil, nil, err
 	}
 	req.Header.Add(contentTypeHeader, contentTypeJSON)
+	req.Header.Add(tokenHeaderName, adminToken)
 
 	return client, req, nil
 }

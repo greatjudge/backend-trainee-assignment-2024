@@ -26,8 +26,7 @@ const (
 
 	noIDinParamsMsg = "нужно указать id"
 
-	errMsgUserNotFoundInCTX = "user not found in context"
-	errMsgCantReadBody      = "can not read body"
+	errMsgCantReadBody = "can not read body"
 
 	errMsgBannerNotFound      = "баннер не найден"
 	errMsgBannerAlreadyExists = "баннер с такими feature_id и tag_id уже существует"

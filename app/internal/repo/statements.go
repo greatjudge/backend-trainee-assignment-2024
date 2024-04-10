@@ -11,7 +11,10 @@ const (
 	),
 	create_banner_relation as (
 		INSERT into banner_relation (banner_id, feature_id, tag_id)
-		SELECT cb.id as banner_id, cb.feature_id as feature_id, UNNEST($1::int[]) as tag_id FROM create_banner AS cb
+		SELECT cb.id as banner_id
+		       , cb.feature_id as feature_id
+		       , UNNEST($1::int[]) as tag_id 
+		  FROM create_banner AS cb
 	)
 	  
 	SELECT "id" FROM create_banner;

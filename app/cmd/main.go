@@ -35,16 +35,28 @@ func getPostgresDB(ctx context.Context) *db.Database {
 	}
 	return database
 }
-func register(router *mux.Router, bannerHandler *handler.BannerHandler) http.Handler {
+func register(router *mux.Router, bannerHandler *handler.BannerHandler) {
 	router.HandleFunc("/user_banner", bannerHandler.GetUserBanner).Methods(http.MethodGet)
 
-	router.HandleFunc("/banner", bannerHandler.BannerList).Methods(http.MethodGet)
-	router.HandleFunc("/banner", bannerHandler.CreateBanner).Methods(http.MethodPost)
+	router.Handle(
+		"/banner",
+		middleware.OnlyAdmin((http.HandlerFunc(bannerHandler.BannerList))),
+	).Methods(http.MethodGet)
 
-	router.HandleFunc("/banner/{id:[0-9]+}", bannerHandler.UpdatePatial).Methods(http.MethodPatch)
-	router.HandleFunc("/banner/{id:[0-9]+}", bannerHandler.DeleteBanner).Methods(http.MethodDelete)
+	router.Handle(
+		"/banner",
+		middleware.OnlyAdmin((http.HandlerFunc(bannerHandler.CreateBanner))),
+	).Methods(http.MethodPost)
 
-	return middleware.AuthMiddleware(router)
+	router.Handle(
+		"/banner/{id:[0-9]+}",
+		middleware.OnlyAdmin((http.HandlerFunc(bannerHandler.UpdatePatial))),
+	).Methods(http.MethodPatch)
+
+	router.Handle(
+		"/banner/{id:[0-9]+}",
+		middleware.OnlyAdmin((http.HandlerFunc(bannerHandler.DeleteBanner))),
+	).Methods(http.MethodDelete)
 }
 
 func main() {
@@ -61,7 +73,19 @@ func main() {
 	bannerHandler := handler.NewBannerHandler(bannerService)
 
 	router := mux.NewRouter()
-	appHandler := register(router, &bannerHandler)
+	register(router, &bannerHandler)
+
+	userToken, ok := os.LookupEnv("USER_TOKEN")
+	if !ok {
+		panic("no USER_TOKEN in env vars")
+	}
+
+	adminToken, ok := os.LookupEnv("ADMIN_TOKEN")
+	if !ok {
+		panic("no ADMIN_TOKEN in env vars")
+	}
+
+	appHandler := middleware.AuthMiddleware(userToken, adminToken, router)
 
 	addr, ok := os.LookupEnv("HOST_PORT")
 	if !ok {

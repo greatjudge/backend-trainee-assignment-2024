@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"banner/internal/constants"
 	"banner/internal/middleware"
 	bannermodels "banner/internal/models/banner"
 	usermodels "banner/internal/models/user"
@@ -59,7 +60,7 @@ func (h *BannerHandler) GetUserBanner(w http.ResponseWriter, r *http.Request) {
 
 	user, ok := r.Context().Value(middleware.UserKey).(usermodels.User)
 	if !ok {
-		sending.SendErrorMsg(w, http.StatusInternalServerError, errMsgUserNotFoundInCTX)
+		sending.SendErrorMsg(w, http.StatusInternalServerError, constants.ErrMsgUserNotFoundInCTX)
 		return
 	}
 
