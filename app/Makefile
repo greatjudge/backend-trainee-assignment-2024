@@ -17,11 +17,11 @@ test-migration-up:
 test-migration-down:
 	goose -dir "$(MIGRATION_FOLDER)" postgres "$(POSTGRES_SETUP_TEST)" down
 
-.PHONY: test-db-up
+.PHONY: test-env-up
 test-db-up:
 	docker compose up -d
 
-.PHONY: test-db-down
+.PHONY: test-env-down
 test-db-down:
 	docker compose down -v
 

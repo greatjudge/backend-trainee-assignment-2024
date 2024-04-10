@@ -1,12 +1,13 @@
 package main
 
 import (
-	"banner/internal/cache"
+	cache "banner/internal/banner_cache"
 	"banner/internal/db"
 	"banner/internal/handler"
 	"banner/internal/middleware"
 	"banner/internal/repo"
 	"banner/internal/service"
+	"time"
 
 	"context"
 	"log"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 )
 
 func init() {
@@ -35,6 +37,32 @@ func getPostgresDB(ctx context.Context) *db.Database {
 	}
 	return database
 }
+
+func getRedisClient(ctx context.Context) *redis.Client {
+	redisAddr, ok := os.LookupEnv("REDIS_ADDR")
+	if !ok {
+		panic("no REDIS_ADDR in env vars")
+	}
+
+	redisPassword, ok := os.LookupEnv("REDIS_PASSWORD")
+	if !ok {
+		panic("no REDIS_PASSWORD in env vars")
+	}
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: redisPassword,
+		DB:       0,
+	})
+
+	_, err := redisClient.Do(ctx, "PING").Result()
+	if err != nil {
+		panic(err)
+	}
+
+	return redisClient
+}
+
 func register(router *mux.Router, bannerHandler *handler.BannerHandler) {
 	router.HandleFunc("/user_banner", bannerHandler.GetUserBanner).Methods(http.MethodGet)
 
@@ -66,8 +94,11 @@ func main() {
 	database := getPostgresDB(ctx)
 	defer database.Close()
 
+	redisClient := getRedisClient(ctx)
+	defer redisClient.Close()
+
 	bannerRepo := repo.NewBannerRepo(database)
-	bannerCache := cache.NewBannerCache()
+	bannerCache := cache.NewBannerRedisCahe(redisClient, 5*time.Minute)
 
 	bannerService := service.NewBannerService(bannerRepo, bannerCache)
 	bannerHandler := handler.NewBannerHandler(bannerService)
