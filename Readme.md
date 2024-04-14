@@ -4,7 +4,7 @@ make run-app
 ```
 Или
 ```
-docker compose --env-file .env up --build
+docker compose --env-file .env up
 ```
 
 # Запуск интеграционных тестов
