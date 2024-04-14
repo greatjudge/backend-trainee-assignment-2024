@@ -1,0 +1,72 @@
+version: "3.9"
+
+services:
+  banner-app:
+    build:
+      dockerfile: Dockerfile
+      context: .
+    environment:
+      HOST_PORT: ":9000"
+      POSTGRES_DB_DSN: ${POSTGRES_DB_DSN}
+      USER_TOKEN: ${USER_TOKEN}
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+      REDIS_ADDR: ${REDIS_ADDR}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - 9000:9000
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+  
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER} 
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "sh -c 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}'"]
+      interval: 2s
+      timeout: 3s
+      retries: 3
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    environment:
+      REDIS_PORT: "6379"
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 1s
+      timeout: 3s
+      retries: 5
+  
+  migrations:
+    image: ghcr.io/kukymbr/goose-docker:3.19.2
+    restart: no
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - GOOSE_DRIVER=postgres
+      - GOOSE_DBSTRING=host=postgres port=5432 user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} dbname=${POSTGRES_DB}
+      - GOOSE_VERBOSE=true
+    volumes:
+      - ./app/internal/db/migrations:/migrations
+
+volumes:
+  postgres_data:

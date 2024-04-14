@@ -2,19 +2,23 @@
 ```
 make run-app
 ```
+Или
+```
+docker compose --env-file .env up --build
+```
 
 # Запуск интеграционных тестов
-1. Поднять тестовую бд
+1. Запустить сервис
 ```
-make test-db-up
+make test-app-up
 ```
-2. Запустить сервис
-```
-make test-run-app
-```
-3. Запустить тесты
+2. Запустить тесты
 ```
 make test-integr
+```
+3. Остановить сервис
+```
+make test-app-down
 ```
 
 # Примеры использования
@@ -57,6 +61,11 @@ EOF
 ```
 
 Выше я поставил is_active=false. Но пользователь всё равно сможет взять баннер в течении 5 минут, т.к. он лежит в кеше.
+Чтобы получить обновленный:
+```bash
+curl -v -w "\n" "http://localhost:9000/user_banner?tag_id=2&feature_id=1&use_last_revision=true" \
+-H "token:admin_token"
+```
 
 ## Banner List
 ```bash

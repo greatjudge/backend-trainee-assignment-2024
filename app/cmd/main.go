@@ -7,6 +7,7 @@ import (
 	"banner/internal/middleware"
 	"banner/internal/repo"
 	"banner/internal/service"
+	"fmt"
 	"time"
 
 	"context"
@@ -15,16 +16,8 @@ import (
 	"os"
 
 	"github.com/gorilla/mux"
-	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 )
-
-func init() {
-	// loads values from .env into the system
-	if err := godotenv.Load(); err != nil {
-		log.Print("No .env file found")
-	}
-}
 
 func getPostgresDB(ctx context.Context) *db.Database {
 	psgDsn, ok := os.LookupEnv("POSTGRES_DB_DSN")
@@ -122,6 +115,8 @@ func main() {
 	if !ok {
 		panic("no HOST_PORT in env vars")
 	}
+
+	fmt.Println("Starting server...")
 
 	if err := http.ListenAndServe(addr, appHandler); err != nil {
 		log.Panic(err)

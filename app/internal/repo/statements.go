@@ -1,7 +1,5 @@
 package repo
 
-// TODO add update_at set
-
 const (
 	SQLDuplicateErrCode = "23505"
 
@@ -52,7 +50,7 @@ const (
 	`
 
 	stmtUpdateBannerTemplate = `
-	UPDATE banner SET %v WHERE "id"=$1;
+	UPDATE banner SET %v, updated_at=NOW() WHERE "id"=$1;
 	`
 
 	stmtDeleteOldTagIDs = `
