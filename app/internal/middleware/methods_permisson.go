@@ -17,6 +17,7 @@ func OnlyAdmin(next http.Handler) http.Handler {
 
 		if !user.IsAdmin {
 			w.WriteHeader(http.StatusForbidden)
+			return
 		}
 
 		next.ServeHTTP(w, r)

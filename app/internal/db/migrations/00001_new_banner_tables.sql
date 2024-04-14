@@ -2,6 +2,7 @@
 -- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS banner (
 	id SERIAL PRIMARY KEY,
+	tag_ids INT[],
 	feature_id INT NOT NULL,
   	is_active BOOL NOT NULL,
 	content jsonb NOT NULL,

@@ -30,7 +30,7 @@ const (
 	SELECT
 		b.id,
 		b.feature_id,
-		(SELECT ARRAY_AGG(tag_id) FROM banner_relation AS br WHERE br.banner_id = b.id) as tag_ids,
+		b.tag_ids,
 		b.content,
 		b.is_active,
 		b.created_at,
@@ -41,11 +41,17 @@ const (
 
 	stmtCreateBanner = `
 	with create_banner AS (
-		INSERT into banner (feature_id, is_active, "content") VALUES ($2, $3, $4) RETURNING "id", feature_id
+		INSERT into banner (tag_ids, feature_id, is_active, "content") 
+		 VALUES ($1::int[], $2, $3, $4) 
+		 RETURNING "id", feature_id
 	),
 	create_banner_relation as (
 		INSERT into banner_relation (banner_id, feature_id, tag_id)
-		SELECT cb.id as banner_id, cb.feature_id as feature_id, UNNEST($1::int[]) as tag_id FROM create_banner AS cb
+		SELECT 
+			cb.id as banner_id
+			, cb.feature_id as feature_id
+			, UNNEST($1::int[]) as tag_id 
+		 FROM create_banner AS cb
 	)
 	  
 	SELECT "id" FROM create_banner;

@@ -17,21 +17,27 @@ test-migration-up:
 test-migration-down:
 	goose -dir "$(MIGRATION_FOLDER)" postgres "$(POSTGRES_SETUP_TEST)" down
 
-.PHONY: test-env-up
-test-db-up:
-	docker compose up -d
-
-.PHONY: test-env-down
-test-db-down:
-	docker compose down -v
-
 .PHONY: run-app
 run-app:
 	make test-migration-up
 	go run cmd/main.go
+
+.PHONY: test-env-up
+test-db-up:
+	docker compose up -d
+
+
+.PHONY: test-env-down
+test-db-down:
+	docker compose down -v
 
 .test-integration:
 	$(info Running integration tests...)
 	go test -v -coverprofile=cover.out ./tests/... -cover
 	go tool cover -html=cover.out -o cover.html
 test-integr: .test-integration ##запуск всех интеграционных тестов
+
+.PHONY: test-run-app
+test-run-app:
+	make test-migration-up
+	go run cmd/main.go

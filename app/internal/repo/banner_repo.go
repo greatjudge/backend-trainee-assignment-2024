@@ -302,6 +302,15 @@ func (repo *BannerRepo) formUpdateArgsFields(
 	updateArgs := make([]interface{}, 0, 3)
 	updateFields := make([]string, 0, 3)
 
+	if bannerPartial.TagIDs != nil {
+		updateArgs = append(updateArgs, updatedBanner.TagIDs)
+		updateFields = append(
+			updateFields,
+			fmt.Sprintf("tag_ids = $%d", nextArgnum), // TODO move str to const
+		)
+		nextArgnum += 1
+	}
+
 	if bannerPartial.FeatureID != nil {
 		updateArgs = append(updateArgs, updatedBanner.FeatureID)
 		updateFields = append(
